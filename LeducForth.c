@@ -52,7 +52,7 @@ void on_uart_rx()
                 working_line = working_line ? 0 : 1;            // Swap around
                 working_index = 0;                              // Reset for next line
                 lines[working_line][working_index] = '\0';      // Prepare next line
-                uart_putc(UART_ID, '\n');                       // Echo newline
+                uart_putc(UART_ID, '\x0D');                       // Echo newline
                 //uart_puts(UART_ID, " ok\n");                       // Echo newline
             }
             else if (ch >= 0x20 && ch<0x7F && working_index < LINE_LENGTH - 1)
@@ -107,6 +107,10 @@ void _emit(char ch)
 
 void _emit_string(const char *str, int len)
 {
+    if ( len > 255 )
+    {
+        len = 255; // Limit to 255 characters
+    }
     while (len--)
     {
         _emit(*str++);
@@ -152,5 +156,5 @@ int sdk_init()
     // OK, all set up.
     // Lets send a basic string out, and then run a loop and wait for RX interrupts
     // The handler will count them, but also reflect the incoming data back with a slight change!
-    uart_puts(UART_ID, "\nLeducForth\n");
+    uart_puts(UART_ID, "\x0DLeducForth\x0D");
 }

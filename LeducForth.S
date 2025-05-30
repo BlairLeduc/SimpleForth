@@ -770,25 +770,25 @@ var_\name:
 @   These words allow you to access the return stack.  Recall that the register r6 always points to
 @   the top of the return stack.
 
-    defcode ">R",,TOR
+    defcode ">r",,TOR
     pop {r0}                            @ pop parameter stack into r0
     PUSHRSP r0                          @ push it on to the return stack
     NEXT
 
-    defcode "R>",,FROMR
+    defcode "r>",,FROMR
     POPRSP r0                           @ pop return stack on to r0
     push {r0}                           @ and push on to parameter stack
     NEXT
 
-    defcode "RSP@",,RSPFETCH
+    defcode "rsp@",,RSPFETCH
     push {r6}                           @ push the return stack pointer
     NEXT
 
-    defcode "RSP!",,RSPSTORE
+    defcode "rsp!",,RSPSTORE
     pop {r6}                            @ pop the return stack pointer
     NEXT
 
-    defcode "RDROP",,RDROP
+    defcode "rdrop",,RDROP
     add r6, #4                          @ pop return stack and throw away
     NEXT
 
@@ -799,12 +799,12 @@ var_\name:
 @
 @   These functions allow you to manipulate the parameter stack that is access throught sp.
 
-    defcode "DSP@",,DSPFETCH
+    defcode "dsp@",,DSPFETCH
     mov r0, sp
     push {r0}
     NEXT
 
-    defcode "DSP!",,DSPSTORE
+    defcode "dsp!",,DSPSTORE
     pop {r0}
     mov sp, r0
     NEXT
@@ -1842,9 +1842,562 @@ interpret_is_lit:
 	push {r0}
 	NEXT
 
+   defword "/",,DIVIDE
+    .word DIVMOD
+    .word SWAP
+    .word DROP
+    .word EXIT
+
+    defword "mod",,MOD
+    .word DIVMOD
+    .word DROP
+    .word EXIT
+
+    defcode "'\\n'",,NL
+    mov r0, #0x0D                       @ Load the ASCII code for newline
+    push {r0}
+    NEXT
+
+    @ bl (BLank) is a standard FORTH word for space.
+    defcode "bl",,BL
+    mov r0, #0x20                       @ Load the ASCII code for space
+    push {r0}
+    NEXT
+
+    defcode "cr",,CR
+    mov r0, #0x0D                       @ Load the ASCII code for carriage return
+    bl _emit
+    NEXT
+
+    defcode "space",,SPACE
+    mov r0, #0x20                       @ Load the ASCII code for space
+    bl _emit                            @ Call the C function to print the character
+    NEXT
+
+    defcode "negate",,NEGATE
+    pop {r0}
+    rsb r0, r0, #0                      @ Negate the number
+    push {r0}
+    NEXT
+
+    defcode "true",,TRUE
+    mov r0, #-1
+    push {r0}
+    NEXT
+
+    defcode "false",,FALSE
+    mov r0, #0
+    push {r0}
+    NEXT
+
+    defcode "not",,NOT
+    b code_ZEQU
+ 
+
+    defword "literal",F_IMMED,LITERAL
+    .word BRACKET_TICK, LIT, COMMA      @ compile lit
+    .word COMMA                         @ compile the literal itself (from the stack)
+    .word EXIT
+
+    defcode "':'",,CHAR_COLON
+    mov r0, #0x3A                       @ Load the ASCII code for ':'
+    push {r0}
+    NEXT
+
+    @ here fetch the data stack pointer. => : here dp @ ;
+    defcode "here",,HERE
+    ldr r0, =var_dp
+    ldr r0, [r0]
+    push {r0}
+    NEXT
+
+    defcode "';'",,CHAR_SEMICOLON
+    mov r0, #0x3B                       @ Load the ASCII code for ';'
+    push {r0}
+    NEXT
+
+    defcode "'('",,CHAR_LPAREN
+    mov r0, #0x28                       @ Load the ASCII code for '('
+    push {r0}
+    NEXT
+
+    defcode "')'",,CHAR_RPAREN
+    mov r0, #0x29                       @ Load the ASCII code for ')'
+    push {r0}
+    NEXT
+
+    defcode "'\"'",,CHAR_QUOTE
+    mov r0, #0x22                       @ Load the ASCII code for '"'
+    push {r0}
+    NEXT
+
+    defcode "'A'",,CHAR_A
+    mov r0, #0x41                       @ Load the ASCII code for 'A'
+    push {r0}
+    NEXT
+
+    defcode "'0'",,CHAR_0
+    mov r0, #0x30                       @ Load the ASCII code for '0'
+    push {r0}
+    NEXT
+
+    defcode "'-'",,CHAR_MINUS
+    mov r0, #0x2D                       @ Load the ASCII code for '-'
+    push {r0}
+    NEXT
+
+    defcode "'.'",,CHAR_DOT
+    mov r0, #0x2E                       @ Load the ASCII code for '.'
+    push {r0}
+    NEXT
+
+    defword "[compile]",F_IMMED,BRACKET_COMPILE
+    .word WORD                          @ get the next word
+    .word PAREN_FIND                    @ find it in the dictionary
+    .word TCFA                          @ get its code field 
+    .word COMMA                         @ and compile that
+    .word EXIT
+
+    @ : recurse immediate latest @ >cfa , ;
+    defword "recurse",F_IMMED,RECURSE
+    .word LATEST, FETCH                 @ latest points to the word being compiled at the moment
+    .word TCFA                          @ get the code field
+    .word COMMA                         @ compile it
+    .word EXIT
+
+    @ : if immediate ['] 0branch , here 0 , ;
+    defword "if",F_IMMED,IF
+    .word BRACKET_TICK, ZBRANCH, COMMA  @ compile 0branch
+    .word HERE                          @ save location of the offset on the stack
+    .word LIT, 0, COMMA                 @ compile a dummy offset
+    .word EXIT
+
+    @ : then immediate dup here swap - swap ! ;
+    defword "then",F_IMMED,THEN
+    .word DUP
+    .word HERE, SWAP, SUB               @ calculate the offset from the address saved on the stack
+    .word SWAP, STORE                   @ store the offset in the back-filled location
+    .word EXIT
+
+    @ : else immediate ['] branch , here 0 , swap dup here swap - swap ! ;
+    defword "else",F_IMMED,ELSE
+    .word BRACKET_TICK, BRANCH, COMMA   @ definite branch to just over the false-part
+    .word HERE                          @ save location of the offset on the stack
+    .word LIT, 0, COMMA                 @ compile a dummy offset
+    .word SWAP                          @ now back-fill the original (if) offset
+    .word DUP                           @ same as for then word above
+    .word HERE, SWAP, SUB
+    .word SWAP, STORE
+    .word EXIT
+
+    @ : begin immediate here ;
+    defword "begin",F_IMMED,BEGIN
+    .word HERE                          @ save location on the stack
+    .word EXIT
+
+    @ : until immediate ['] 0branch , here - , ;
+    defword "until",F_IMMED,UNTIL
+    .word BRACKET_TICK, ZBRANCH, COMMA  @ compile 0branch
+    .word HERE, SUB                     @  calculate the offset from the address saved on the stack
+    .word COMMA                         @ compile the offset here
+    .word EXIT
+
+    @ : again immediate ['] branch , here - , ;
+    defword "again",F_IMMED,AGAIN
+    .word BRACKET_TICK, BRANCH, COMMA   @ compile branch
+    .word HERE, SUB                     @ calculate the offset back
+    .word COMMA                         @ compile the offset here
+    .word EXIT
+
+    @ : while immediate ['] 0branch , here swap 0 , ;
+    defword "while",F_IMMED,WHILE
+    .word BRACKET_TICK, ZBRANCH, COMMA  @ compile 0branch
+    .word HERE                          @ save location of the offset2 on the stack
+    .word SWAP                          @ get the original offset (from begin)
+    .word LIT, 0, COMMA                 @ compile a dummy offset2
+    .word EXIT
+
+    @ : repeat immediate ['] branch , here - , dup here swap - swap ! ;
+    defword "repeat",F_IMMED,REPEAT
+    .word BRACKET_TICK, BRANCH, COMMA   @ compile branch
+    .word HERE, SUB, COMMA              @ and compile it after branch
+    .word DUP
+    .word HERE, SWAP, SUB               @ calculate the offset2
+    .word SWAP, STORE                   @ and back-fill it in the original location
+    .word EXIT
+
+    @ : unless immediate ['] not , if ;
+    defword "unless",F_IMMED,UNLESS
+    .word BRACKET_TICK, NOT, COMMA      @ compile not (to reverse the test)
+    .word IF                            @ continue by calling the normal if
+    .word EXIT
+
+    @ : ( immediate 1 key dup '(' = 0branch ( 20 ) drop 1+ branch ( 24 ) ')' = 0branch ( 8 ) 1- dup 0= 0branch ( -72 ) drop ;
+    defword "(",F_IMMED,comment
+    .word LIT, 1                        @ allowed nested parens by keeping track of depth
+    .word KEY                           @ read next character
+    .word DUP, CHAR_LPAREN, EQU, ZBRANCH, 20 @ open paren?
+    .word DROP                          @ drop the open paren
+    .word INCR                          @ depth increases
+    .word BRANCH, 24                    @ branch to the end of the comment
+    .word CHAR_RPAREN, EQU, ZBRANCH, 8  @ close paren?
+    .word DECR                          @ depth decreases
+    .word DUP, ZEQU, ZBRANCH, -72       @ continue until we reach matching close paren, depth 0
+    .word DROP                          @ drop the depth counter
+    .word EXIT
+
+    @ : nip ( x y -- y ) swap drop ;
+    defword "nip",,NIP
+    .word SWAP
+    .word DROP
+    .word EXIT
+
+    @ : tuck ( x y -- y x y ) swap over ;
+    defword "tuck",,TUCK
+    .word SWAP
+    .word OVER
+    .word EXIT
+
+    @ : pick ( x_u ... x_1 x_0 u -- x_u ... x_1 x_0 x_u ) 1+ 4 * DSP@ + @ ;
+    defword "pick",,PICK
+    .word INCR                          @ add one because of 'u' on the stack
+    .word LIT, 4, MUL                   @ multiply by the word size
+    .word DSPFETCH, ADD                @ add to the stack pointer
+    .word FETCH                         @ and fetch
+    .word EXIT
+
+    @ : spaces ( n -- ) dup 0> 0branch ( 20 ) space 1- branch ( -28 ) drop ;
+    defword "spaces",,SPACES
+    .word DUP, ZGT, ZBRANCH, 20         @ is n > 0?
+    .word SPACE                         @ if so, print a space
+    .word DECR                          @ decrement n
+    .word BRANCH, -28                   @ branch back to the start
+    .word DROP                          @ drop n
+    .word EXIT
+
+    @ : decimal ( -- ) 10 base ! ;
+    defword "decimal",,DECIMAL
+    .word LIT, 10                       @ load the decimal base
+    .word BASE
+    .word STORE                         @ store it in the BASE variable
+    .word EXIT
+
+    @ : hex ( -- ) 16 base ! ;
+    defword "hex",,HEX
+    .word LIT, 16                       @ load the hex base
+    .word BASE
+    .word STORE                         @ store it in the BASE variable
+    .word EXIT
+
+    @ : u. ( u -- ) base @ u/mod ?dup 0branch ( 8 ) u. dup 10 < 0branch ( 16 ) '0' branch ( 20 ) 10 - 'A' + emit ;
+    defword "u.",,U_DOT
+    .word BASE, FETCH, UDIVMOD          @ width rem quot
+    .word QDUP, ZBRANCH, 8              @ if quotient <> 0 then
+    .word U_DOT                         @ recurse to print the quotient
+    .word DUP, LIT, 10, LT, ZBRANCH, 16 @ print the remainder
+    .word CHAR_0                        @ decimal digits 0..9 
+    .word BRANCH, 20
+    .word LIT, 10, SUB                  @ decimal digits 0..9 
+    .word CHAR_A
+    .word ADD
+    .word EMIT
+    .word EXIT
+
+    @ : .S ( -- ) DSP@ 0 s0 @ + 4- over over <= 0branch ( 32 ) dup @ u. space 4- branch ( -44 ) drop drop ;
+    defword ".s",,DOT_S
+    .word DSPFETCH                      @ get current stack pointer
+    .word LIT, 0, SZ, FETCH, ADD, DECR4 @ pointer to the stack element
+    .word OVER, OVER, LE, ZBRANCH, 32   @ compare to current stack pointer
+    .word DUP, FETCH, U_DOT             @ print the stack element
+    .word SPACE
+    .word DECR4                         @ move down
+    .word BRANCH, -44
+    .word DROP, DROP
+    .word EXIT
+
+    @ : uwidth ( u -- width ) base @ / ?dup 0branch ( 20 ) uwidth 1+ branch ( 12 ) 1 ;
+    defword "uwidth",,UWIDTH
+    .word BASE, FETCH, DIVIDE           @ rem quot
+    .word QDUP, ZBRANCH, 20             @ if quotient <> 0 then
+    .word UWIDTH, INCR                  @ return 1+recursive call
+    .word BRANCH, 12
+    .word LIT, 1                        @ return 1
+    .word EXIT
+
+    @ : u.r ( u width -- ) swap dup uwidth rot swap - spaces u. ;
+    defword "u.r",,U_R
+    .word SWAP                         @ width u
+    .word DUP                          @ width u u
+    .word UWIDTH                       @ width u uwidth
+    .word ROT                          @ u uwidth width
+    .word SWAP, SUB                    @ u width-uwidth
+    .word SPACES
+    .word U_DOT
+    .word EXIT
+
+    @ : .r ( n width -- ) swap dup 0< 0branch ( 36 ) negate 1 swap rot 1- branch ( 20 ) 0 swap rot
+    @      swap dup uwidth rot swap - spaces swap 0branch ( 12 ) '-' emit u. ;
+    defword ".r",,DOT_R
+    .word SWAP                          @ width n
+    .word DUP, ZLT, ZBRANCH, 36
+    .word NEGATE                        @ width u
+    .word LIT, 1                        @ save a flag to remember that it was negative | width n 1 
+    .word SWAP                          @ width 1 u
+    .word ROT                           @ 1 u width
+    .word DECR                          @ 1 u width-1
+    .word BRANCH, 20
+    .word LIT, 0                        @ width u 0
+    .word SWAP                          @ width 0 u
+    .word ROT                           @ 0 u width
+    .word SWAP                          @ flag width u
+    .word DUP                           @ flag width u u
+    .word UWIDTH                        @ flag width u uwidth
+    .word ROT                           @ flag u uwidth width
+    .word SWAP, SUB                     @ flag u width-uwidth
+    .word SPACES                        @ flag u
+    .word SWAP                          @ u flag
+    .word ZBRANCH, 12                   @ was it negative? print the - character
+    .word CHAR_MINUS, EMIT              @ if so, print the minus sign
+    .word U_DOT
+    .word EXIT
+
+    @ : . 0 .r space ;
+    defword ".",,DOT
+    .word LIT, 0
+    .word DOT_R
+    .word SPACE
+    .word EXIT
+
+    @ : u. u. space ;
+    defword "u.",,U_DOT_SPACE
+    .word U_DOT
+    .word SPACE
+    .word EXIT
+
+    @ : ? ( addr -- ) @ . ;
+    defword "?",,QUESTION
+    .word FETCH                         @ fetch the value at addr
+    .word DOT
+    .word EXIT
+    
+    @ : within -rot over <= 0branch ( 40 ) > 0branch ( 16 ) true branch ( 8 ) false branch ( 12 ) 2drop false ;
+    defword "within",,WITHIN
+    .word NROT                          @  b c a
+    .word OVER                          @  b c a c
+    .word LE, ZBRANCH, 40
+    .word GT, ZBRANCH, 16               @  b c --
+    .word TRUE
+    .word BRANCH, 8                     @  else
+    .word FALSE
+    .word BRANCH, 12                    @ then
+    .word TWODROP
+    .word FALSE
+    .word EXIT
+
+    @ : depth ( -- n ) s0 @ DSP@ - 4- 4 / ;
+    defword "depth",,DEPTH
+    .word SZ, FETCH, DSPFETCH, SUB
+    .word DECR4                         @ adjust because s0 was on the stack when we pushed DSP
+    .word LIT, 4, DIVIDE                @ A cell has four bytes
+    .word EXIT
+
+    @ : aligned ( addr -- addr ) 3 + 3 invert and ;
+    defword "aligned",,ALIGNED
+    .word LIT, 3, ADD
+    .word LIT, 3, INVERT
+    .word AND
+    .word EXIT
+
+    @ : align here aligned dp ! ;
+    defword "align",,ALIGN
+    .word HERE
+    .word ALIGNED
+    .word DP
+    .word STORE
+    .word EXIT
+
+    @  : c, here c! 1 dp +! ;
+    defword "c,",,C_COMMA
+    .word HERE, STOREBYTE               @ store the character in the compiled image
+    .word LIT, 1, DP, ADDSTORE          @ increment dp pointer by 1 byte
+    .word EXIT
+
+    @ : s" ( -- addr len ) immediate state @ 0branch ( 112 ) ['] litstring , here 0 , key dup '"' <> 0branch ( 16 ) 
+    @      c, branch ( -32 ) drop dup here swap - 4- swap ! align branch ( 72 ) here key dup '"' <> 0branch ( 24 )
+    @      over c! 1+ branch ( -40 ) drop here - here swap ;
+    defword "s\"",F_IMMED,S_QUOTE      @ s"
+    .word STATE, FETCH, ZBRANCH, 112    @ compiling?
+    .word BRACKET_TICK, LITSTRING, COMMA @ compile litstring
+    .word HERE                          @ save the address of the length word on the stack
+    .word LIT, 0, COMMA                      @ dummy length - we don't know what it is yet
+    .word KEY                           @ get next character of the string
+    .word DUP, CHAR_QUOTE, NEQU, ZBRANCH, 16
+    .word C_COMMA                       @ copy character
+    .word BRANCH, -32                   @ repeat
+    .word DROP                          @ drop the double quote character at the end 
+    .word DUP                           @ get the saved address of the length word
+    .word HERE, SWAP, SUB               @ calculate the length
+    .word DECR4                         @ subtract 4 (because we measured from the start of the length word)
+    .word SWAP, STORE                   @ and back-fill the length location
+    .word ALIGN                         @ round up to next multiple of 4 bytes for the remaining code
+    .word BRANCH, 72                    @ immediate mode
+    .word HERE                          @ get the start address of the temporary space
+    .word KEY
+    .word DUP, CHAR_QUOTE, NEQU
+    .word ZBRANCH, 24                   @ while
+    .word OVER, STOREBYTE               @ copy character
+    .word INCR                          @ increment address
+    .word BRANCH, -40                   @ repeat
+    .word DROP                          @ drop the final " character
+    .word HERE, SUB                     @ calculate the length
+    .word HERE                          @ push the start address
+    .word SWAP                          @ ( addr len )
+    .word EXIT
+    
+    @ @ : ." immediate state @ 0branch ( 28 ) s" ['] tell , branch ( 48 ) key dup '"' = 0branch ( 12 ) drop exit emit branch ( -40 ) ;
+    defword ".\"",F_IMMED,DOT_QUOTE     @ ."
+    .word STATE, FETCH, ZBRANCH, 28     @ compiling?
+    .word S_QUOTE                       @ read the string, and compile litstring, etc.
+    .word BRACKET_TICK, TELL, COMMA     @ compile the final tell
+    .word BRANCH, 48                    @ In immediate mode, just read characters and print them until we get
+                                        @   to the ending double quote.
+    .word KEY
+    .word DUP, CHAR_QUOTE, EQU, ZBRANCH, 12
+    .word DROP                          @ drop the double quote character
+    .word EXIT                          @ return from this function
+    .word EMIT
+    .word BRANCH, -40                   @ repeat until we get to the double quote character
+    .word EXIT
+
+    @ : constant word header, docol , ['] lit , , ['] exit , ;
+    defword "constant",,CONSTANT
+    .word WORD                          @ get the name (the name follows constant)
+    .word HEADER_COMMA                  @ make the dictionary entry
+    .word DOCOL, COMMA                  @ append docol (the code field of this word)
+    .word BRACKET_TICK, LIT, COMMA      @ append the code field lit
+    .word COMMA                         @ append the value on the top of the stack
+    .word BRACKET_TICK, EXIT, COMMA     @ append the code field exit
+    .word EXIT
+
+    @ : allot ( n -- addr ) dp +! ;
+    defword "allot",,ALLOT
+    .word DP, ADDSTORE                  @ adds n to here, after this the old value of here is still on the stack
+    .word EXIT
+
+    @ : cells ( n -- n ) 4 * ;
+    defword "cells",,CELLS
+    .word LIT, 4                        @ load the cell size
+    .word MUL                           @ multiply by the cell size
+    .word EXIT
+
+    @ : variable word header, dodoes , 0 , 1 cells allot , ;
+    defword "variable",,VARIABLE
+    .word WORD, HEADER_COMMA          @ make the dictionary entry (the name follows variable)
+    .word __DODOES, COMMA, LIT, 0, COMMA @ append docol (the code field of this word)
+    .word LIT, 1, CELLS, ALLOT, COMMA @ allocate one cell of memory
+    .word EXIT
+
+    @ : create word header, dodoes , 0 , ;
+    defword "create",,CREATE
+    .word WORD, HEADER_COMMA            @ make the dictionary entry (the name follows VARIABLE)
+    .word __DODOES, COMMA, LIT, 0, COMMA  @ ppend docol (the code field of this word)
+    .word EXIT
+
+    @ : does> r> latest @ >dfa ! ;
+    defword "does>",,FROMDOES
+    .word FROMR, LATEST, FETCH          @ get the latest word
+    .word TDFA, STORE                   @ store the code field of the latest word
+    .word EXIT
+
+    @ : value word header, docol , ['] lit , , ['] exit , ;
+    defword "value",,VALUE
+    .word WORD, HEADER_COMMA            @ make the dictionary entry (the name follows value)
+    .word __DOCOL, COMMA                  @ append docol
+    .word BRACKET_TICK, LIT, COMMA      @ append the code field lit
+    .word COMMA                         @ append the initial value
+    .word BRACKET_TICK, EXIT, COMMA     @ append the code field exit
+    .word EXIT
+
+    @ : to ( n -- ) immediate word (find) >dfa 4+ state @ 0branch ( 40 ) ['] lit , , ['] ! , branch ( 8 ) ! ;
+    defword "to",F_IMMED,TO
+    .word WORD                          @ get the name of the value
+    .word PAREN_FIND                    @ look it up in the dictionary
+    .word TDFA                          @ get a pointer to the first data field (the 'lit')
+    .word INCR4                         @ increment to point at the value
+    .word STATE, FETCH, ZBRANCH, 40     @ compiling?
+    .word BRACKET_TICK, LIT, COMMA      @ compile lit
+    .word COMMA                         @ compile the address of the value
+    .word BRACKET_TICK, STORE, COMMA    @ compile !
+    .word BRANCH, 8                     @ immediate mode
+    .word STORE                         @ update it straightaway
+    .word EXIT
+
+    @ : +to immediate word (find) >dfa 4+ state @ 0branch ( 40 ) ['] lit , , ['] +! , branch ( 8 ) +! ;
+    defword "+to",F_IMMED,ADDTO
+    .word WORD                          @ get the name of the value
+    .word PAREN_FIND                    @ look it up in the dictionary
+    .word TDFA                          @ get a pointer to the first data field (the 'lit')
+    .word INCR4                         @ increment to point at the value
+    .word STATE, FETCH, ZBRANCH, 40     @ compiling?
+    .word BRACKET_TICK, LIT, COMMA      @ compile lit
+    .word COMMA                         @ compile the address of the value
+    .word BRACKET_TICK, STORE, COMMA    @ compile !
+    .word BRANCH, 8                     @ immediate mode
+    .word ADDSTORE                      @ update it straightaway
+    .word EXIT
+
+    @ : id. 4+ dup c@ f_lenmask and dup 0> 0branch ( 40 ) swap 1+ dup c@ emit swap 1- branch ( -48 ) 2drop ;
+    defword "id.",,ID_DOT
+    .word INCR4                         @ skip over the link pointer
+    .word DUP, FETCHBYTE                @ get the flags/length byte
+    .word __F_LENMASK, AND              @ mask out the flags - just want the length
+    .word DUP, ZGT, ZBRANCH, 40         @ length > 0?
+    .word SWAP, INCR                    @ addr len -- len addr+1
+    .word DUP, FETCHBYTE                @ len addr -- len addr char | get the next character
+    .word EMIT                          @ len addr char -- len addr | and print it
+    .word SWAP, DECR                    @ len addr -- addr len-1    | subtract one from length
+    .word BRANCH, -48                   @ repeat until we reach the end of the word
+    .word TWODROP                       @ len addr --
+    .word EXIT
+
+    @ : ?hidden 4+ c@ f_hidden and ;
+    defword "?hidden",,QHIDDEN
+    .word INCR4                         @ skip over the link pointer
+    .word FETCHBYTE                     @ get the flags/length byte
+    .word __F_HIDDEN, AND               @ mask out the flags - just want the hidden flag
+    .word EXIT
+
+    @ : ?immediate 4+ c@ f_immed and ;
+    defword "?immediate",,QIMMED
+    .word INCR4                         @ skip over the link pointer
+    .word FETCHBYTE                     @ get the flags/length byte
+    .word __F_IMMED, AND                @ mask out the flags - just want the immediate flag
+    .word EXIT
+
+    @ : words latest @ ?dup 0branch ( 48 ) dup ?hidden not 0branch ( 16 ) dup id. space @ branch ( -52 ) cr ;
+    defword "words",,WORDS
+    .word LATEST, FETCH                 @ start at latest dictionary entry
+    .word QDUP                          @ while link pointer is not null
+    .word ZBRANCH, 48
+    .word DUP, QHIDDEN, NOT, ZBRANCH, 16 @ ignore hidden words
+    .word DUP, ID_DOT, SPACE            @ print the word
+    .word FETCH, BRANCH, -52            @ dereference the link pointer - go to previous word
+    .word CR
+    .word EXIT
+
+    @ : forget word (find) dup @ latest ! dp ! ;
+    defword "forget",,FORGET
+    .word WORD, PAREN_FIND              @ find the word, gets the dictionary entry address
+    .word DUP, FETCH, LATEST, STORE     @ set latest to point to the previous word
+    .word DP, STORE                     @ and store here with the dictionary address
+    .word EXIT
+
+    @
 
 
-@
+
+
+
 @   MARK: Odds and ends
 @
 @   CHAR puts the ASCII code of the first character of the following word on the stack.  For example

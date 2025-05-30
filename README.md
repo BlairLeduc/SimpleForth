@@ -1,9 +1,9 @@
-# LeducForth
+# SimpleForth
 
-This project is a FORTH Compiler for the Raspberry Pi Pico 2 W (RP2350).
+This project is a Forth Compiler for the Raspberry Pi Pico 2 W (RP2350).
 
-This is a simple FORTH compiler for the Raspberry Pi Pico 2 W or the Pimoroni Pico Plus 2 W.
-It is strongly based on the Jones FORTH by Richard W.M. Jones, which can be found:
+This is a simple Forth compiler for the Raspberry Pi Pico 2 W or the Pimoroni Pico Plus 2 W.
+It is strongly based on the Jones Forth by Richard W.M. Jones, which can be found:
 
 > http://annexia.org/forth
 

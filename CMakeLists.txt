@@ -28,37 +28,37 @@ set(PICO_DEOPTIMIZED_DEBUG ON)      # Disable optimizations.
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(LeducForth C CXX ASM)
+project(SimpleForth C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(LeducForth
-    LeducForth.c
-    LeducForth.S
+add_executable(SimpleForth
+    Forth.c
+    Forth.S
     )
 
-pico_set_program_name(LeducForth "LeducForth")
-pico_set_program_version(LeducForth "0.1")
+pico_set_program_name(SimpleForth "SimpleForth")
+pico_set_program_version(SimpleForth "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
-# pico_enable_stdio_uart(LeducForth 1)
-# pico_enable_stdio_usb(LeducForth 0)
+# pico_enable_stdio_uart(SimpleForth 1)
+# pico_enable_stdio_usb(SimpleForth 0)
 
 # Add the standard library to the build
-target_link_libraries(LeducForth
+target_link_libraries(SimpleForth
         pico_stdlib hardware_uart)
 
 # Add the standard include files to the build
-target_include_directories(LeducForth PRIVATE
+target_include_directories(SimpleForth PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
 # Add any user requested libraries
-target_link_libraries(LeducForth 
+target_link_libraries(SimpleForth 
         )
 
-pico_add_extra_outputs(LeducForth)
+pico_add_extra_outputs(SimpleForth)
 
